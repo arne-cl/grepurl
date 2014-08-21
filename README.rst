@@ -23,5 +23,6 @@ GPLv2 or later.
 Authors
 -------
 
-Gerome Fournier (original author).
-Arne Neumann (added -l option for local files).
+Gerome Fournier (original author). His implementation is only available via the
+[Internet Archive](http://web.archive.org/web/20101116071317/http://jefke.free.fr/stuff/python/grepurl/grepurl).
+Arne Neumann (added -l option for local files, minor changes).
