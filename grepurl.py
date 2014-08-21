@@ -174,6 +174,7 @@ class GrepURLs(htmllib.HTMLParser):
         fetch = FetchThreads(self.urls, self.output_dir)
         fetch.run()
 
+
 def usage():
     sys.stderr.write("""\
 Usage: %s [OPTION]... URL...
@@ -190,42 +191,45 @@ Options:
   -l            grep URLS from a LOCAL file
 """ % sys.argv[0])
 
-download = False
-try:
-    opts, args = getopt.getopt(sys.argv[1:], "hair:do:l") #DEFINE all flags here!
-except getopt.GetoptError:
-    usage()
-    sys.exit(1)
 
-grepurls = GrepURLs()
-for flag, value in opts:
-    if flag == '-h':
+def main():
+    download = False
+    try:
+        # DEFINE all flags here!
+        opts, args = getopt.getopt(sys.argv[1:], "hair:do:l")
+    except getopt.GetoptError:
         usage()
-        sys.exit(0)
-    if flag == '-a':
-        grepurls.set_only_a()
-    if flag == '-i':
-        grepurls.set_only_img()
-    if flag == "-r":
-        grepurls.set_regexp(value)
-    if flag == "-d":
-        download = True
-    if flag == '-o':
-        grepurls.set_output_dir(value)
-    if flag == '-l':
-        grepurls.grep_local(args)
-        #print flag, sys.argv
+        sys.exit(1)
 
-if len(args) == 0:
-    sys.stderr.write("\nError: No arguments given!\n\n")
-    usage()
-    sys.exit(1)
+    grepurls = GrepURLs()
 
-grepurls.grep(args) #default case w/out flags
-if download:
-    grepurls.download()
+    for flag, value in opts:
+        if flag == '-h':
+            usage()
+            sys.exit(0)
+        if flag == '-a':
+            grepurls.set_only_a()
+        if flag == '-i':
+            grepurls.set_only_img()
+        if flag == "-r":
+            grepurls.set_regexp(value)
+        if flag == "-d":
+            download = True
+        if flag == '-o':
+            grepurls.set_output_dir(value)
+        if flag == '-l':
+            grepurls.grep_local(args)
+            #print flag, sys.argv
 
-'''
-test the program interactively:
-grepurls.grep(["http://nyt.com"])
-'''
+    if len(args) == 0:
+        sys.stderr.write("\nError: No arguments given!\n\n")
+        usage()
+        sys.exit(1)
+
+    grepurls.grep(args) #default case w/out flags
+    if download:
+        grepurls.download()
+
+
+if __name__ == '__main__':
+    main()
