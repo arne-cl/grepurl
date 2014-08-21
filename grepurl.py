@@ -133,7 +133,19 @@ class GrepURLs(htmllib.HTMLParser):
             content = http.get(url)
             self.base_href = http.last_fetched_url()
             if content != None:
-                self.feed(content)
+                self.feed(content) #content = raw content of the files dowloaded from the urls
+                ''' WTF does self.feed() do with the content'''
+
+    def grep_local(self, local_files):
+##        print self
+##        print local_file
+        for local_file in local_files:
+            tempfile = open(local_file, "r")
+            file_content = tempfile.read()
+            self.feed(file_content)
+        #TODO: add exception if file is empty
+        #TODO: use proper paths from the os-module
+
 
     def match(self, attrs, key):
         for attr in attrs:
@@ -142,7 +154,12 @@ class GrepURLs(htmllib.HTMLParser):
                     url = urlparse.urljoin(self.base_href, attr[1])
                     if url not in self.urls:
                         self.urls.append(url)
-                        print url
+                        #print url
+                        ''' original implementation uses print instead of
+                        sys.stdout, but why?
+                        '''
+                        sys.stdout.write("%s\n" % (url))
+                        sys.stdout.flush() #seems necessary sometimes to _really write to stdout
                     break
 
     def start_a(self, attrs):
@@ -170,11 +187,12 @@ Options:
   -r <regexp>   return only URLs matching '<regexp>'
   -d            download resources
   -o <dir>      store downloaded resources inside '<dir>'
+  -l            grep URLS from a LOCAL file
 """ % sys.argv[0])
 
 download = False
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "hair:do:")
+    opts, args = getopt.getopt(sys.argv[1:], "hair:do:l") #DEFINE all flags here!
 except getopt.GetoptError:
     usage()
     sys.exit(1)
@@ -194,11 +212,20 @@ for flag, value in opts:
         download = True
     if flag == '-o':
         grepurls.set_output_dir(value)
+    if flag == '-l':
+        grepurls.grep_local(args)
+        #print flag, sys.argv
 
 if len(args) == 0:
+    sys.stderr.write("\nError: No arguments given!\n\n")
     usage()
     sys.exit(1)
 
-grepurls.grep(args)
+grepurls.grep(args) #default case w/out flags
 if download:
     grepurls.download()
+
+'''
+test the program interactively:
+grepurls.grep(["http://nyt.com"])
+'''
