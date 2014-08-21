@@ -24,5 +24,7 @@ Authors
 -------
 
 Gerome Fournier (original author). His implementation is only available via the
-[Internet Archive](http://web.archive.org/web/20101116071317/http://jefke.free.fr/stuff/python/grepurl/grepurl).
+`Internet Archive`_.
 Arne Neumann (added -l option for local files, minor changes).
+
+.. _`Internet Archive`: http://web.archive.org/web/20101116071317/http://jefke.free.fr/stuff/python/grepurl/grepurl
