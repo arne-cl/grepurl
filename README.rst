@@ -14,6 +14,14 @@ Usage
     grepurl -i http://example.com/bar.htm # only extract from <img> tags (i.e. images)
     grepurl -r "\.py$" http://example.com/ # only extract links that end in '.py'
 
+Installation
+------------
+
+::
+
+    sudo apt install libcurl4-openssl-dev
+    sudo python setup.py install
+
 License
 -------
 
