@@ -1,235 +1,146 @@
-#!/usr/bin/python
-#
-# Copyright (C) 2004 Gerome Fournier <jefke(at)free.fr>
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#!/usr/bin/env python3
 
-__author__ = 'Gerome Fournier <jefke(at)free.fr>'
-__license__ = 'GPL'
-__version__ = '0.1'
-__revision__ = '$Id: grepurl,v 1.2 2004/10/28 19:01:02 jef Exp jef $'
+"""
+grepurl.py: A utility for extracting and optionally downloading URLs
+from web pages or local HTML files.
 
-import urlparse
-import StringIO
-import htmllib
-import formatter
-import threading
-import Queue
-import pycurl
-import getopt
-import sys
-import re
+This script allows users to fetch URLs embedded within <a> tags and
+<img> tags from either web pages accessed via HTTP requests or local
+HTML files.
+
+It supports filtering URLs based on regular expressions,
+selectively processing only <a> tags or <img> tags, and downloading the
+resources pointed to by these URLs. 
+"""
+
+import argparse
 import os
+import re
+from urllib.parse import urljoin
 
-class HTTP:
-    def __init__(self):
-        self.curl = pycurl.Curl()
-        self.curl.setopt(pycurl.FOLLOWLOCATION, 1)
-
-    def get(self, url):
-        file = StringIO.StringIO()
-        self.curl.setopt(pycurl.WRITEFUNCTION, file.write)
-        self.curl.setopt(pycurl.URL, url)
-        try:
-            self.curl.perform()
-        except pycurl.error, reason:
-            sys.stderr.write("Error getting '%s': %s\n" % (url, reason[1]))
-            return None
-        return file.getvalue()
-
-    def last_fetched_url(self):
-        return self.curl.getinfo(pycurl.EFFECTIVE_URL)
-
-class FetchThreads:
-    def __init__(self, urls, output_dir, max=5):
-        self.queue = Queue.Queue()
-        for url in urls:
-            self.queue.put(url)
-        self.output_dir = output_dir
-        self.max = max
-
-    def fetch_file(self, url):
-        content = HTTP().get(url)
-        if content != None:
-            filename = self.url_to_filename(url)
-            sys.stderr.write("Downloading %s as %s\n" % (url, filename))
-            try:
-                file=open(filename, "w")
-                file.write(content)
-                file.close()
-            except IOError, reason:
-                sys.stderr.write("Can't write '%s': %s\n" 
-                        % (filename, reason[1]))
-
-    def url_to_filename(self, url):
-        base = self.output_dir + "/" 
-        base += os.path.basename(urlparse.urlsplit(url)[2])
-        filename = base
-        i = 1
-        try:
-            while os.stat(filename):
-                filename = "%s.%d" % (base, i)
-                i += 1
-        except OSError:
-            return filename
-
-    def handle_queue(self):
-        while 1:
-            try:
-                url = self.queue.get(False)
-            except Queue.Empty:
-                break
-            self.fetch_file(url)
-
-    def run(self):
-        threads = []
-        for i in range(self.max):
-            thread = threading.Thread(target=self.handle_queue)
-            thread.start()
-            threads.append(thread)
-        for t in threads:
-            t.join()
-        
-class GrepURLs(htmllib.HTMLParser):
-    def __init__(self):
-        self.handle_a = True
-        self.handle_img = True
-        self.regexp = None
-        self.base_href = None
-        self.urls = []
-        self.output_dir = "."
-        htmllib.HTMLParser.__init__(self, formatter.NullFormatter())
-
-    def set_only_a(self):
-        self.handle_a = True
-        self.handle_img = False
-
-    def set_only_img(self):
-        self.handle_a = False
-        self.handle_img = True
-
-    def set_regexp(self, regexp):
-        self.regexp = re.compile(regexp)
-
-    def set_output_dir(self, dir):
-        self.output_dir = dir
-
-    def grep(self, urls):
-        self.urls = []
-        http = HTTP()
-        for url in urls:
-            content = http.get(url)
-            self.base_href = http.last_fetched_url()
-            if content != None:
-                self.feed(content) #content = raw content of the files dowloaded from the urls
-                ''' WTF does self.feed() do with the content'''
-
-    def grep_local(self, local_files):
-##        print self
-##        print local_file
-        for local_file in local_files:
-            tempfile = open(local_file, "r")
-            file_content = tempfile.read()
-            self.feed(file_content)
-        #TODO: add exception if file is empty
-        #TODO: use proper paths from the os-module
+from bs4 import BeautifulSoup
+import requests
 
 
-    def match(self, attrs, key):
-        for attr in attrs:
-            if attr[0] == key:
-                if not self.regexp or self.regexp.search(attr[1]):
-                    url = urlparse.urljoin(self.base_href, attr[1])
-                    if url not in self.urls:
-                        self.urls.append(url)
-                        #print url
-                        ''' original implementation uses print instead of
-                        sys.stdout, but why?
-                        '''
-                        sys.stdout.write("%s\n" % (url))
-                        sys.stdout.flush() #seems necessary sometimes to _really write to stdout
-                    break
+def fetch_urls(source, only_a=False, only_img=False, regexp=None, is_local=False):
+    """
+    Fetch URLs from a web page or a local HTML file.
+    
+    Parameters
+    ----------
+    source : str
+        The URL of the web page or the path to a local file to process.
+    only_a : bool, optional
+        If True, fetch URLs only from <a> tags. Default is False.
+    only_img : bool, optional
+        If True, fetch URLs only from <img> tags. Default is False.
+    regexp : str, optional
+        A regular expression pattern to filter the URLs. Only URLs
+        matching the pattern will be returned. Default is None.
+    is_local : bool, optional
+        If True, treat the source as a local file path. Otherwise,
+        treat it as a URL. Default is False.
 
-    def start_a(self, attrs):
-        if self.handle_a:
-            self.match(attrs, "href")
+    Returns
+    -------
+    set
+        A set of URLs extracted from the specified source, filtered by
+        the given criteria.
+    """
+    urls = set()
+    if is_local:
+        with open(source, 'r') as file:
+            content = file.read()
+    else:
+        response = requests.get(source)
+        content = response.text
 
-    def do_img(self, attrs):
-        if self.handle_img:
-            self.match(attrs, "src")
+    soup = BeautifulSoup(content, 'html.parser')
 
-    def download(self):
-        fetch = FetchThreads(self.urls, self.output_dir)
-        fetch.run()
+    if not only_img:  # process <a> tags unless we're only processing <img> tags
+        for link in soup.find_all('a', href=True):
+            urls.add(link['href'])
 
+    if not only_a:  # process <img> tags unless we're only processing <a> tags
+        for img in soup.find_all('img', src=True):
+            urls.add(img['src'])
 
-def usage():
-    sys.stderr.write("""\
-Usage: %s [OPTION]... URL...
-Grep URLs from a web page and eventually download the resources they point to.
+    if regexp:
+        regexp_compiled = re.compile(regexp)
+        urls = {url for url in urls if regexp_compiled.search(url)}
 
-Options:
-  -h            display this help and exit
-  -a            grep only URLs inside <a> tags
-  -i            grep only URLs inside <img> tags
-                (by default, both <a> and <img> tags are processed)
-  -r <regexp>   return only URLs matching '<regexp>'
-  -d            download resources
-  -o <dir>      store downloaded resources inside '<dir>'
-  -l            grep URLS from a LOCAL file
-""" % sys.argv[0])
+    return urls
 
+def download_resource(url, output_dir, base_url=None):
+    """
+    Download a resource from the given URL and save it to the specified
+    output directory.
+    
+    Parameters
+    ----------
+    url : str
+        The URL of the resource to download. If `base_url` is provided,
+        `url` is treated as a relative URL.
+    output_dir : str
+        The directory where the downloaded resource will be saved.
+    base_url : str, optional
+        The base URL to be joined with a relative URL. Default is None,
+        meaning `url` is considered an absolute URL.
+
+    Returns
+    -------
+    None
+        The resource is saved to a file in the specified output directory.
+    """
+    if not base_url:
+        resource = requests.get(url)
+    else:
+        full_url = urljoin(base_url, url)
+        resource = requests.get(full_url)
+
+    filename = url.split('/')[-1]
+    path = os.path.join(output_dir, filename)
+
+    with open(path, 'wb') as file:
+        file.write(resource.content)
 
 def main():
-    download = False
-    try:
-        # DEFINE all flags here!
-        opts, args = getopt.getopt(sys.argv[1:], "hair:do:l")
-    except getopt.GetoptError:
-        usage()
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Grep URLs from a web page and eventually download the resources they point to.')
+    parser.add_argument('URL', nargs='*', help='URL(s) to process')
+    parser.add_argument('-a', '--only-a', action='store_true',
+        help='grep only URLs inside <a> tags')
+    parser.add_argument('-i', '--only-img', action='store_true',
+        help='grep only URLs inside <img> tags')
+    parser.add_argument('-r', '--regexp', metavar='<regexp>',
+        help="return only URLs matching '<regexp>'")
+    parser.add_argument('-d', '--download', action='store_true',
+        help='download resources')
+    parser.add_argument('-o', '--output-dir', metavar='<dir>',
+        help="store downloaded resources inside '<dir>'", default='.')
+    parser.add_argument('-l', '--local', action='store_true',
+        help='grep URLs from a LOCAL file')
 
-    grepurls = GrepURLs()
+    args = parser.parse_args()
 
-    for flag, value in opts:
-        if flag == '-h':
-            usage()
-            sys.exit(0)
-        if flag == '-a':
-            grepurls.set_only_a()
-        if flag == '-i':
-            grepurls.set_only_img()
-        if flag == "-r":
-            grepurls.set_regexp(value)
-        if flag == "-d":
-            download = True
-        if flag == '-o':
-            grepurls.set_output_dir(value)
-        if flag == '-l':
-            grepurls.grep_local(args)
-            #print flag, sys.argv
+    if not args.URL and not args.local:
+        print("Please provide at least one URL or specify --local to process files.")
+        return
 
-    if len(args) == 0:
-        sys.stderr.write("\nError: No arguments given!\n\n")
-        usage()
-        sys.exit(1)
+    sources = args.URL if not args.local else args.URL[0]
 
-    grepurls.grep(args) #default case w/out flags
-    if download:
-        grepurls.download()
+    if args.local:
+        urls = fetch_urls(sources, args.only_a, args.only_img, args.regexp, args.local)
+    else:
+        urls = set()
+        for source in args.URL:
+            urls |= fetch_urls(source, args.only_a, args.only_img, args.regexp)
+
+    for url in urls:
+        print(url)
+        if args.download:
+            download_resource(url, args.output_dir, None if args.local else source)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
