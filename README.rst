@@ -9,10 +9,12 @@ Usage
 
 ::
 
-    grepurl http://example.com/
+    grepurl http://example.com/ # extract all URLs from links and images
     grepurl -a http://example.com/foo.htm # only extract from <a> tags (i.e. links)
     grepurl -i http://example.com/bar.htm # only extract from <img> tags (i.e. images)
     grepurl -r "\.py$" http://example.com/ # only extract links that end in '.py'
+    grepurl -r "\.zip$" -d http://example.com/ # download all zip files
+    grepurl -r "\.zip$" -d -o download_dir http://example.com/ # download all zip files into download_dir
 
 Installation using pip
 ----------------------
